@@ -1,0 +1,1 @@
+- Verrouillage du state : use_lockfile = true (natif S3). dynamodb_table est deprecie par HashiCorp, ne pas l'utiliser.
