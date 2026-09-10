@@ -29,44 +29,26 @@ resource "aws_key_pair" "main" {
   public_key = file(pathexpand(var.ssh_public_key_path))
 }
 
-resource "aws_security_group" "web" {
-  name        = "${local.name}-web"
-  description = "SSH restreint a mon IP, HTTP ouvert"
+module "web" {
+  source = "git::ssh://git@gitlab.com/5src-deploiement/terraform-aws-ec2-server.git?ref=v1.0.0"
 
-  ingress {
-    description = "SSH depuis mon poste uniquement"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [local.my_cidr]
-  }
-
-  ingress {
-    description = "HTTP public"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  name          = "${var.owner}-web"
+  ami_id        = data.aws_ami.debian.id
+  instance_type = var.instance_type
+  key_name      = aws_key_pair.main.key_name
+  admin_cidr    = local.my_cidr
+  open_ports    = [80]
 }
 
-resource "aws_instance" "web" {
-  ami                    = data.aws_ami.debian.id
-  instance_type          = var.instance_type
-  key_name               = aws_key_pair.main.key_name
-  vpc_security_group_ids = [aws_security_group.web.id]
+module "monitoring" {
+  source = "git::ssh://git@gitlab.com/5src-deploiement/terraform-aws-ec2-server.git?ref=v1.0.0"
 
-  tags = {
-    Name = "${local.name}-web"
-    Role = "web"
-  }
+  name          = "${var.owner}-monitoring"
+  ami_id        = data.aws_ami.debian.id
+  instance_type = var.instance_type
+  key_name      = aws_key_pair.main.key_name
+  admin_cidr    = local.my_cidr
+  open_ports    = []
 }
 
 # Inventaire Ansible genere depuis les outputs : aucune IP recopiee a la main
@@ -74,6 +56,7 @@ resource "local_file" "inventory" {
   filename        = "${path.module}/../ansible/inventory.ini"
   file_permission = "0644"
   content = templatefile("${path.module}/inventory.tftpl", {
-    web_ip = aws_instance.web.public_ip
+    web_ip        = module.web.public_ip
+    monitoring_ip = module.monitoring.public_ip
   })
 }

@@ -19,12 +19,12 @@ terraform {
   # Backend local pour demarrer. La S1 du module Bac+5 migre ce state
   # vers un backend S3 partage avec verrouillage natif (use_lockfile).
   backend "s3" {
- 	bucket = "novasphere-tfstate-cel"
- 	key = "novasphere/terraform.tfstate"
- 	region = "us-east-1"
- 	encrypt = true
- 	use_lockfile = true
-	}
+    bucket       = "novasphere-tfstate-cel"
+    key          = "novasphere/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {
