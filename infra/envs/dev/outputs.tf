@@ -1,19 +1,12 @@
-output "web_public_ip" {
-  description = "IP publique de l'instance web"
-  value       = module.web.public_ip
+output "alb_dns_name" {
+  description = "Nom DNS public de l'Application Load Balancer"
+  value       = aws_lb.web.dns_name
 }
 
-output "web_instance_id" {
-  description = "Identifiant de l'instance (utilise par les scripts stop/start)"
-  value       = module.web.instance_id
+output "vpc_id" {
+  value = module.vpc.vpc_id
 }
 
-output "monitoring_public_ip" {
-  description = "IP publique de l'instance de supervision"
-  value       = module.monitoring.public_ip
-}
-
-output "ssh_command" {
-  description = "Commande de connexion"
-  value       = "ssh -i ~/.ssh/novasphere admin@${module.web.public_ip}"
+output "public_subnets" {
+  value = module.vpc.public_subnets
 }
