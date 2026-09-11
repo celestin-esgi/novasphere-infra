@@ -25,3 +25,13 @@ variable "ssh_public_key_path" {
   type        = string
   default     = "~/.ssh/novasphere.pub"
 }
+
+variable "environment" {
+  description = "Environnement cible (dev, prod)"
+  type        = string
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment doit valoir dev ou prod."
+  }
+}
