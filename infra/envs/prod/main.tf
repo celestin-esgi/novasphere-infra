@@ -1,4 +1,3 @@
-# Image Debian 12 officielle la plus recente
 data "aws_ami" "debian" {
   most_recent = true
   owners      = ["136693071363"]
@@ -14,51 +13,157 @@ data "aws_ami" "debian" {
   }
 }
 
-# IP publique du poste qui execute Terraform
-data "http" "my_ip" {
-  url = "https://api.ipify.org"
+# Learner Lab : la creation de roles IAM est interdite, on consomme le profil fourni
+data "aws_iam_instance_profile" "lab" {
+  name = "LabInstanceProfile"
 }
 
 locals {
-  my_cidr = "${chomp(data.http.my_ip.response_body)}/32"
-  name    = "novasphere-${var.environment}-${var.owner}"
+  name = "novasphere-${var.environment}-${var.owner}"
 }
 
-resource "aws_key_pair" "main" {
-  key_name   = "${local.name}-key"
-  public_key = file(pathexpand(var.ssh_public_key_path))
+resource "aws_ssm_parameter" "db_password" {
+  name             = "/novasphere/${var.environment}/db_password"
+  type             = "SecureString"
+  value_wo         = var.db_password
+  value_wo_version = 1
 }
 
-module "web" {
-  source = "git::ssh://git@gitlab.com/5src-deploiement/terraform-aws-ec2-server.git?ref=v1.1.0"
+module "network" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
 
-  name          = "${var.environment}-${var.owner}-web"
-  ami_id        = data.aws_ami.debian.id
+  name = local.name
+  cidr = "10.0.0.0/16"
+
+  azs            = ["us-east-1a", "us-east-1b"]
+  public_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
+
+  enable_nat_gateway      = false
+  map_public_ip_on_launch = true
+}
+
+resource "aws_security_group" "alb" {
+  #checkov:skip=CKV_AWS_382:Sortie ouverte necessaire (apt, API SSM). Pas de NAT Gateway par choix de cout, les instances sortent par la passerelle Internet.
+  name   = "${local.name}-alb"
+  vpc_id = module.network.vpc_id
+
+  ingress {
+    description = "HTTP public"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Sortie ouverte pour apt et l API SSM"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "web" {
+  #checkov:skip=CKV_AWS_382:Sortie ouverte necessaire (apt, API SSM). Pas de NAT Gateway par choix de cout, les instances sortent par la passerelle Internet.
+  name   = "${local.name}-web"
+  vpc_id = module.network.vpc_id
+
+  ingress {
+    description     = "HTTP depuis le SG de l ALB uniquement"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    description = "Sortie ouverte pour apt et l API SSM"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_launch_template" "web" {
+  name_prefix   = "${local.name}-"
+  image_id      = data.aws_ami.debian.id
   instance_type = var.instance_type
-  key_name      = aws_key_pair.main.key_name
-  admin_cidr    = local.my_cidr
-  open_ports    = [80]
+
+  vpc_security_group_ids = [aws_security_group.web.id]
+
+  user_data = base64encode(templatefile("${path.module}/bootstrap.sh", {
+    environment = var.environment
+  }))
+
+  iam_instance_profile {
+    name = data.aws_iam_instance_profile.lab.name
+  }
+
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags          = { Name = "${local.name}-web" }
+  }
 }
 
-module "monitoring" {
-  source = "git::ssh://git@gitlab.com/5src-deploiement/terraform-aws-ec2-server.git?ref=v1.1.0"
+resource "aws_lb" "web" {
+  name               = local.name
+  load_balancer_type = "application"
 
-  name          = "${var.environment}-${var.owner}-monitoring"
-  ami_id        = data.aws_ami.debian.id
-  instance_type = var.instance_type
-  key_name      = aws_key_pair.main.key_name
-  admin_cidr    = local.my_cidr
-  open_ports    = []
-
-  enable_monitoring_port = true
+  drop_invalid_header_fields = true
+  subnets                    = module.network.public_subnets
+  security_groups            = [aws_security_group.alb.id]
 }
 
-# Inventaire Ansible genere, un fichier par environnement
-resource "local_file" "inventory" {
-  filename        = "${path.module}/../../../ansible/inventory-${var.environment}.ini"
-  file_permission = "0644"
-  content = templatefile("${path.module}/inventory.tftpl", {
-    web_ip        = module.web.public_ip
-    monitoring_ip = module.monitoring.public_ip
-  })
+resource "aws_lb_target_group" "web" {
+  name     = "${local.name}-web"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = module.network.vpc_id
+
+  health_check {
+    path    = "/"
+    matcher = "200"
+  }
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.web.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.web.arn
+  }
+}
+
+resource "aws_autoscaling_group" "web" {
+  name                = "${local.name}-web"
+  min_size            = 2
+  max_size            = 4
+  desired_capacity    = 2
+  vpc_zone_identifier = module.network.public_subnets
+  target_group_arns   = [aws_lb_target_group.web.arn]
+  health_check_type   = "ELB"
+
+  health_check_grace_period = 300
+
+  launch_template {
+    id      = aws_launch_template.web.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${local.name}-web"
+    propagate_at_launch = true
+  }
 }
