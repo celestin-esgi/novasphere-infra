@@ -44,14 +44,15 @@ module "network" {
 }
 
 module "web_stack" {
-  source = "git::https://github.com/celestin-esgi/terraform-aws-web-stack.git?ref=v1.0.0"
+  source = "git::https://github.com/celestin-esgi/terraform-aws-web-stack.git?ref=v1.1.0"
 
   name       = local.name
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.public_subnets
 
-  ami_id        = data.aws_ami.debian.id
-  instance_type = var.instance_type
+  ami_id           = data.aws_ami.debian.id
+  instance_type    = var.instance_type
+  desired_capacity = var.desired_capacity
 
   user_data_base64 = base64encode(templatefile("${path.module}/bootstrap.sh", {
     environment = var.environment
