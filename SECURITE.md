@@ -88,3 +88,32 @@ Internet entier, et contredit le modele de S04 ou les instances n'acceptent de
 trafic que depuis le Security Group de l'ALB. `terraform apply` a remis la
 realite en conformite. La remediation inverse, `terraform apply -refresh-only`,
 aurait enterine la regle dans le state sans la soumettre a revue.
+
+## S07 — Authentification de la CI : l'ecart assume
+
+Le support impose OIDC : GitHub emet un jeton signe a chaque execution, AWS le
+verifie et delivre des credentials temporaires pour un role IAM restreint a un
+depot et une branche. Aucun secret n'est stocke, rien a faire tourner.
+
+Ce dispositif exige deux ressources IAM : un `aws_iam_openid_connect_provider`
+et un `aws_iam_role` portant une politique de confiance conditionnee sur les
+claims `aud` et `sub` du jeton. Le compte AWS Academy Learner Lab interdit la
+creation de l'un comme de l'autre.
+
+Repli mis en place : les credentials temporaires de la session de lab sont
+stockes dans les secrets du depot (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`AWS_SESSION_TOKEN`). C'est exactement la « solution naive » que le support
+critique. Ses defauts, dans ce contexte precis :
+
+- quiconque obtient un acces en ecriture aux secrets obtient les droits AWS ;
+- la rotation est manuelle — ici elle est meme subie, les credentials du lab
+  expirant a chaque session, ce qui casse le pipeline tant qu'ils ne sont pas
+  recolles ;
+- aucune restriction par depot ni par branche n'est possible : le jeton vaut
+  pour tout ce que le role `voclabs` sait faire.
+
+Sur un compte AWS standard, le passage a OIDC ne demanderait aucun changement
+dans les workflows en dehors du remplacement du bloc `env` par l'action
+`aws-actions/configure-aws-credentials` avec `role-to-assume`, et l'ajout de
+la permission `id-token: write` deja presente en commentaire dans
+`terraform-pr.yml`.
