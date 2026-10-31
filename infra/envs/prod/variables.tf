@@ -35,3 +35,9 @@ variable "environment" {
     error_message = "environment doit valoir dev ou prod."
   }
 }
+
+variable "db_password" {
+  description = "Mot de passe applicatif, fourni par TF_VAR_db_password"
+  type        = string
+  ephemeral   = true
+}
