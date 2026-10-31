@@ -47,3 +47,9 @@ variable "mal_formate" {
   type    = string
   default = "x"
 }
+
+variable "desired_capacity" {
+  description = "Nombre d'instances visees dans le groupe d'auto-scaling"
+  type        = number
+  default     = 2
+}
