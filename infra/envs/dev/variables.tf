@@ -43,7 +43,7 @@ variable "db_password" {
 }
 
 
-variable  "mal_formate"  {
- type    = string
- default="x"
+variable "mal_formate" {
+  type    = string
+  default = "x"
 }
