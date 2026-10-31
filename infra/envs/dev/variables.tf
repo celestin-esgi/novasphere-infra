@@ -41,3 +41,9 @@ variable "db_password" {
   type        = string
   ephemeral   = true
 }
+
+
+variable  "mal_formate"  {
+ type    = string
+ default="x"
+}
