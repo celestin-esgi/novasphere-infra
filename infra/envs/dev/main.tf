@@ -13,8 +13,20 @@ data "aws_ami" "debian" {
   }
 }
 
+# Learner Lab : la creation de roles IAM est interdite, on consomme le profil fourni
+data "aws_iam_instance_profile" "lab" {
+  name = "LabInstanceProfile"
+}
+
 locals {
   name = "novasphere-${var.environment}-${var.owner}"
+}
+
+resource "aws_ssm_parameter" "db_password" {
+  name             = "/novasphere/${var.environment}/db_password"
+  type             = "SecureString"
+  value_wo         = var.db_password
+  value_wo_version = 1
 }
 
 module "vpc" {
@@ -32,6 +44,7 @@ module "vpc" {
 }
 
 resource "aws_security_group" "alb" {
+  #checkov:skip=CKV_AWS_382:Sortie ouverte necessaire (apt, API SSM). Pas de NAT Gateway par choix de cout, les instances sortent par la passerelle Internet.
   name   = "${local.name}-alb"
   vpc_id = module.vpc.vpc_id
 
@@ -44,6 +57,7 @@ resource "aws_security_group" "alb" {
   }
 
   egress {
+    description = "Sortie ouverte pour apt et l API SSM"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -52,6 +66,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "web" {
+  #checkov:skip=CKV_AWS_382:Sortie ouverte necessaire (apt, API SSM). Pas de NAT Gateway par choix de cout, les instances sortent par la passerelle Internet.
   name   = "${local.name}-web"
   vpc_id = module.vpc.vpc_id
 
@@ -64,6 +79,7 @@ resource "aws_security_group" "web" {
   }
 
   egress {
+    description = "Sortie ouverte pour apt et l API SSM"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -77,7 +93,19 @@ resource "aws_launch_template" "web" {
   instance_type = var.instance_type
 
   vpc_security_group_ids = [aws_security_group.web.id]
-  user_data              = base64encode(file("${path.module}/bootstrap.sh"))
+
+  user_data = base64encode(templatefile("${path.module}/bootstrap.sh", {
+    environment = var.environment
+  }))
+
+  iam_instance_profile {
+    name = data.aws_iam_instance_profile.lab.name
+  }
+
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
 
   tag_specifications {
     resource_type = "instance"
@@ -88,8 +116,10 @@ resource "aws_launch_template" "web" {
 resource "aws_lb" "web" {
   name               = local.name
   load_balancer_type = "application"
-  subnets            = module.vpc.public_subnets
-  security_groups    = [aws_security_group.alb.id]
+
+  drop_invalid_header_fields = true
+  subnets                    = module.vpc.public_subnets
+  security_groups            = [aws_security_group.alb.id]
 }
 
 resource "aws_lb_target_group" "web" {
