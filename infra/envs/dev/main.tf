@@ -29,7 +29,7 @@ resource "aws_ssm_parameter" "db_password" {
   value_wo_version = 1
 }
 
-module "vpc" {
+module "network" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 6.0"
 
@@ -46,7 +46,7 @@ module "vpc" {
 resource "aws_security_group" "alb" {
   #checkov:skip=CKV_AWS_382:Sortie ouverte necessaire (apt, API SSM). Pas de NAT Gateway par choix de cout, les instances sortent par la passerelle Internet.
   name   = "${local.name}-alb"
-  vpc_id = module.vpc.vpc_id
+  vpc_id = module.network.vpc_id
 
   ingress {
     description = "HTTP public"
@@ -68,7 +68,7 @@ resource "aws_security_group" "alb" {
 resource "aws_security_group" "web" {
   #checkov:skip=CKV_AWS_382:Sortie ouverte necessaire (apt, API SSM). Pas de NAT Gateway par choix de cout, les instances sortent par la passerelle Internet.
   name   = "${local.name}-web"
-  vpc_id = module.vpc.vpc_id
+  vpc_id = module.network.vpc_id
 
   ingress {
     description     = "HTTP depuis le SG de l ALB uniquement"
@@ -118,7 +118,7 @@ resource "aws_lb" "web" {
   load_balancer_type = "application"
 
   drop_invalid_header_fields = true
-  subnets                    = module.vpc.public_subnets
+  subnets                    = module.network.public_subnets
   security_groups            = [aws_security_group.alb.id]
 }
 
@@ -126,7 +126,7 @@ resource "aws_lb_target_group" "web" {
   name     = "${local.name}-web"
   port     = 80
   protocol = "HTTP"
-  vpc_id   = module.vpc.vpc_id
+  vpc_id   = module.network.vpc_id
 
   health_check {
     path    = "/"
@@ -150,7 +150,7 @@ resource "aws_autoscaling_group" "web" {
   min_size            = 2
   max_size            = 4
   desired_capacity    = 2
-  vpc_zone_identifier = module.vpc.public_subnets
+  vpc_zone_identifier = module.network.public_subnets
   target_group_arns   = [aws_lb_target_group.web.arn]
   health_check_type   = "ELB"
 

@@ -77,3 +77,14 @@ CKV_AWS_103, CKV2_AWS_20, CKV_AWS_378) faute de nom de domaine et de certificat
 ACM ; WAF (CKV2_AWS_28) ; logs d'acces de l'ALB (CKV_AWS_91) ; protection contre
 la suppression (CKV_AWS_150), volontairement desactivee puisque la regle du
 module impose un `destroy` en fin de seance.
+
+## S06 — Derive detectee et tranchee
+
+Une regle `tcp/8080` ouverte a `0.0.0.0/0` a ete ajoutee a la main sur le
+Security Group des instances. `terraform plan` l'a signalee sous
+« Objects have changed outside of Terraform ». Decision : **le code a raison**.
+La regle n'avait fait l'objet d'aucune revue, exposait un port applicatif a
+Internet entier, et contredit le modele de S04 ou les instances n'acceptent de
+trafic que depuis le Security Group de l'ALB. `terraform apply` a remis la
+realite en conformite. La remediation inverse, `terraform apply -refresh-only`,
+aurait enterine la regle dans le state sans la soumettre a revue.

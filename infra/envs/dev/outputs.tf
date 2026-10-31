@@ -4,9 +4,9 @@ output "alb_dns_name" {
 }
 
 output "vpc_id" {
-  value = module.vpc.vpc_id
+  value = module.network.vpc_id
 }
 
 output "public_subnets" {
-  value = module.vpc.public_subnets
+  value = module.network.public_subnets
 }
